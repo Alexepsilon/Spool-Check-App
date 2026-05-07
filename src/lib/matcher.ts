@@ -41,7 +41,6 @@ export interface MatchResult {
 
 export class CodeMatcher {
   private readonly pattern: RegExp;
-  private readonly looseDashedToken = /\b[A-Z0-9]+(?:-[A-Z0-9]+){2,}\b/g;
   private readonly entries: Map<string, MasterEntry>; // composite key -> entry
   private readonly normalisedToKey: Map<string, string>;
 

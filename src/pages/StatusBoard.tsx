@@ -117,14 +117,17 @@ export default function StatusBoardPage() {
               {t(`board_filter_${f}` as never)}
             </button>
           ))}
-          {unchartedCount > 0 && (
-            <Link
-              to={`/uncharted/${deliveryId}`}
-              className="ml-auto px-3 py-1 rounded-full text-sm whitespace-nowrap bg-status-pending/20 text-yellow-900 border border-status-pending/40"
-            >
-              ⚠ {unchartedCount}
-            </Link>
-          )}
+          <Link
+            to={`/uncharted/${deliveryId}`}
+            className={
+              'ml-auto px-3 py-1 rounded-full text-sm whitespace-nowrap border ' +
+              (unchartedCount > 0
+                ? 'bg-status-pending/20 text-yellow-900 border-status-pending/40 font-medium'
+                : 'bg-gray-50 text-gray-600 border-gray-200')
+            }
+          >
+            ⚠ {t('uncharted_title')}{unchartedCount > 0 ? ` (${unchartedCount})` : ''}
+          </Link>
         </div>
       </div>
       <ul className="divide-y bg-white flex-1">

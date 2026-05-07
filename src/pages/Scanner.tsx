@@ -7,7 +7,6 @@ import {
   appendScan,
   appendUncharted,
   findItemByKey,
-  findItemsByDrawing,
   getDelivery,
   listItems,
   loadSettings,

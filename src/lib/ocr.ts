@@ -19,13 +19,15 @@ async function getWorker(): Promise<Tesseract.Worker> {
         },
       });
       // Limit charset to make OCR faster and more accurate on tag-like
-      // text. PSM 1 = automatic page segmentation WITH orientation
-      // detection — handles tags that hang upside-down or sideways
-      // from a spool, which is common on site.
+      // text. PSM 6 = single uniform block of text. This is the right
+      // mode for spool tags: they're a small region of text on a
+      // contrasting background, NOT a full document page. PSM 1 (auto +
+      // OSD) expects a page and silently returns empty results on
+      // single-tag images — we burned a session on that.
       await worker.setParameters({
         tessedit_char_whitelist:
           'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-./: |&',
-        tessedit_pageseg_mode: PSM.AUTO_OSD,
+        tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
       });
       return worker;
     })();

@@ -15,7 +15,13 @@ import {
 import { pulseDouble, pulseLong, pulseShort } from '../lib/haptics';
 import { useLang } from '../lib/i18n';
 import { CodeMatcher, type MatchResult } from '../lib/matcher';
-import { getWorkerStatus, recognizeCanvas, recognizeImage } from '../lib/ocr';
+import {
+  getWorkerProgress,
+  getWorkerStatus,
+  preloadWorker,
+  recognizeCanvas,
+  recognizeImage,
+} from '../lib/ocr';
 import {
   DEFAULT_CODE_PATTERN,
   FRAME_CONSENSUS_COUNT,
@@ -82,10 +88,27 @@ export default function ScannerPage() {
   const lastFrameAt = useRef(0);
   const stopped = useRef(false);
 
+  // OCR worker status, polled cheaply so we can surface a loading bar.
+  const [workerInfo, setWorkerInfo] = useState({
+    status: getWorkerStatus().status,
+    progress: getWorkerProgress(),
+  });
+
   // ---------- bootstrap ----------
   useEffect(() => {
+    // Eagerly start the OCR download the moment the user enters the
+    // scanner; without this, the very first scan call kicks off a 5 MB
+    // download and the user sees nothing happen for 10–30 seconds.
+    preloadWorker();
     void boot();
+    const tick = setInterval(() => {
+      setWorkerInfo({
+        status: getWorkerStatus().status,
+        progress: getWorkerProgress(),
+      });
+    }, 250);
     return () => {
+      clearInterval(tick);
       stopped.current = true;
       camRef.current?.stop();
     };
@@ -527,6 +550,9 @@ export default function ScannerPage() {
             variant="wide"
             theme="dark"
           />
+          {workerInfo.status !== 'ready' && (
+            <OcrLoadingBar status={workerInfo.status} progress={workerInfo.progress} />
+          )}
           <div className="flex border-t border-white/10">
             <ModeBtn label="📷 Live" active={mode === 'live'} onClick={() => switchMode('live')} />
             <ModeBtn label="🖼 Photo" active={mode === 'photo'} onClick={() => switchMode('photo')} />
@@ -648,6 +674,32 @@ function HighlightBanner({ item }: { item: MasterItem }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function OcrLoadingBar({
+  status,
+  progress,
+}: {
+  status: 'init' | 'ready' | 'error';
+  progress: number;
+}) {
+  const pct = Math.round(progress * 100);
+  const label =
+    status === 'error'
+      ? 'OCR engine failed to load — check connection'
+      : pct < 100
+      ? `Loading OCR engine… ${pct}%`
+      : 'Initialising OCR…';
+  return (
+    <div className="bg-yellow-500/95 text-black px-3 py-1.5 text-xs flex items-center gap-2">
+      <span className="flex-1 font-medium">{label}</span>
+      {status !== 'error' && (
+        <div className="flex-shrink-0 w-24 h-1.5 bg-black/15 rounded overflow-hidden">
+          <div className="h-full bg-black/60 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      )}
     </div>
   );
 }

@@ -101,9 +101,18 @@ export const SPOOL_HEADERS = [
   'stuk',
 ];
 
-/** How many consecutive OCR frames must agree before we commit a tick. */
-export const FRAME_CONSENSUS_COUNT = 3;
-export const FRAME_CONSENSUS_WINDOW = 6;
+/**
+ * How many consecutive OCR frames must agree before we commit a tick.
+ *
+ * 2 = quick to commit but more vulnerable to one-off OCR mistakes.
+ * 3 = slower (~750 ms hold) but kills almost all single-frame errors.
+ *
+ * With the crop + grayscale + contrast preprocessing in place,
+ * Tesseract is producing more consistent results, so 2 is a
+ * reasonable default. Bump back to 3 if false positives appear.
+ */
+export const FRAME_CONSENSUS_COUNT = 2;
+export const FRAME_CONSENSUS_WINDOW = 5;
 
 /** Rate limit for committing the same scan key twice. */
 export const SCAN_DEBOUNCE_MS = 4000;

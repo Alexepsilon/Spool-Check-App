@@ -16,25 +16,37 @@ export function getWorkerStatus(): { status: typeof workerStatus; error: string 
   return { status: workerStatus, error: workerError };
 }
 
+/**
+ * Drives all OCR. Loading is split into two phases — `init` while we
+ * download Tesseract's WASM and language data (~5 MB), then `ready`
+ * once the worker is set up. Callers can poll `getWorkerStatus()` to
+ * surface progress in the UI.
+ *
+ * Eng-only: `nld.traineddata` doubled the download size and Dutch
+ * isn't actually needed since the matcher reads raw uppercase strings
+ * — Tesseract's English model recognises the same Latin letters
+ * regardless of the original language of the labels.
+ */
 async function getWorker(): Promise<Tesseract.Worker> {
   if (!workerPromise) {
+    workerStatus = 'init';
+    workerError = null;
+    workerProgress = 0;
     workerPromise = (async () => {
       try {
-        const worker = await Tesseract.createWorker(['eng', 'nld'], 1, {
-          logger: () => {
-            // Silenced — we don't surface progress per call.
+        const worker = await Tesseract.createWorker('eng', 1, {
+          logger: (m) => {
+            if (typeof m.progress === 'number') {
+              workerProgress = m.progress;
+            }
           },
         });
-        // Default page segmentation (auto, no OSD). The previous custom
-        // PSM choices (1 = page+OSD, 6 = single block) both turned out
-        // to misbehave on small tag images — silent empties with PSM 1,
-        // overzealous merging with PSM 6. Default PSM 3 has been the
-        // most reliable in real testing.
         await worker.setParameters({
           tessedit_char_whitelist:
             'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-./: |&',
         });
         workerStatus = 'ready';
+        workerProgress = 1;
         return worker;
       } catch (e) {
         workerStatus = 'error';
@@ -44,6 +56,19 @@ async function getWorker(): Promise<Tesseract.Worker> {
     })();
   }
   return workerPromise;
+}
+
+let workerProgress = 0;
+export function getWorkerProgress(): number {
+  return workerProgress;
+}
+
+/** Eagerly start loading Tesseract — call from the Scanner page on mount
+ *  so the download has a head start before the user actually scans. */
+export function preloadWorker(): void {
+  void getWorker().catch(() => {
+    // Errors surface via getWorkerStatus(); nothing to do here.
+  });
 }
 
 /** OCR a Blob (image file) and return the recognised text. */

@@ -62,6 +62,8 @@ export default function ScannerPage() {
   const [holding, setHolding] = useState(false);
   const [feed, setFeed] = useState<{ time: number; key: string; status: string }[]>([]);
   const [pending, setPending] = useState<PendingFlow | null>(null);
+  const [debug, setDebug] = useState(false);
+  const [lastOcr, setLastOcr] = useState('');
 
   // Frame-consensus state lives in refs so the OCR loop can mutate without rerenders.
   const consensusBuf = useRef<Set<string>[]>([]);
@@ -162,6 +164,7 @@ export default function ScannerPage() {
     const c = captureFrame(videoRef.current, canvasRef.current);
     if (!c) return;
     const text = await recognizeCanvas(c);
+    if (debug) setLastOcr(text);
     const matches = matcher.match(text);
     const keys = new Set<string>();
     for (const m of matches) {
@@ -425,6 +428,7 @@ export default function ScannerPage() {
     setError(null);
     try {
       const text = await recognizeImage(file);
+      setLastOcr(text);
       const matches = matcher.match(text);
       // Prefer exact, then fuzzy, then partial.
       const exact = matches.find((m) => m.confidence === 'exact');
@@ -500,9 +504,19 @@ export default function ScannerPage() {
           <div className="flex border-t border-white/10">
             <ModeBtn label="📷 Live" active={mode === 'live'} onClick={() => switchMode('live')} />
             <ModeBtn label="🖼 Photo" active={mode === 'photo'} onClick={() => switchMode('photo')} />
+            <button
+              onClick={() => setDebug((v) => !v)}
+              className={
+                'ml-auto px-3 text-xs border-l border-white/10 ' +
+                (debug ? 'bg-yellow-500 text-black font-semibold' : '')
+              }
+              title="Show what OCR is reading right now"
+            >
+              {debug ? '🐛 ON' : '🐛'}
+            </button>
             {mode === 'live' && (
-              <button onClick={toggleFlash} className="ml-auto px-4 text-sm border-l border-white/10">
-                {flashOn ? '🔦 On' : '💡 Off'}
+              <button onClick={toggleFlash} className="px-3 text-sm border-l border-white/10">
+                {flashOn ? '🔦' : '💡'}
               </button>
             )}
           </div>
@@ -520,6 +534,7 @@ export default function ScannerPage() {
               <Reticle holding={holding} />
             </div>
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent pt-12 px-4 pb-4">
+              {debug && <DebugOcr text={lastOcr} />}
               <p className="text-center text-sm text-white/80 mb-3">{t('scan_aim')}</p>
               <Feed feed={feed} />
             </div>
@@ -563,6 +578,7 @@ export default function ScannerPage() {
                 <div className="mt-2 text-sm">{busy}</div>
               </div>
             )}
+            {debug && <DebugOcr text={lastOcr} />}
             <div className="mt-8 max-h-48 overflow-auto w-full max-w-sm">
               <Feed feed={feed} />
             </div>
@@ -683,6 +699,24 @@ function Feed({ feed }: { feed: { time: number; key: string; status: string }[] 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Live OCR debug panel. Toggleable from the Scanner top bar.
+ * Shows what Tesseract just produced so the user can diagnose
+ * why a tag isn't matching — empty = OCR can't read anything,
+ * full of garbage = noise/glare/moiré, recognisable but off-format
+ * = pattern needs another tweak.
+ */
+function DebugOcr({ text }: { text: string }) {
+  return (
+    <div className="bg-yellow-500/95 text-black rounded-lg px-3 py-2 mb-3 text-xs font-mono max-h-32 overflow-auto whitespace-pre-wrap break-all">
+      <div className="font-semibold uppercase tracking-wide text-[10px] mb-1">
+        OCR debug — last frame
+      </div>
+      {text.trim() || '(empty — OCR found nothing)'}
     </div>
   );
 }

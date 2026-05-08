@@ -195,7 +195,7 @@ export default function StatusBoardPage() {
           </ul>
         )}
       </div>
-      <div className="sticky bottom-0 p-3 bg-white border-t">
+      <div className="sticky bottom-0 p-3 bg-white border-t z-20 shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
         <Link
           to={`/scan/${deliveryId}`}
           className="block w-full bg-accent text-white text-center rounded-lg py-3 font-medium active:scale-95"

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import ProgressStrip from '../components/ProgressStrip';
-import { captureFrame, setTorch, startBackCamera, type CameraHandle } from '../lib/camera';
+import { captureFrame, cropAndPreprocess, setTorch, startBackCamera, type CameraHandle } from '../lib/camera';
 import {
   appendScan,
   appendUncharted,
@@ -49,6 +49,7 @@ export default function ScannerPage() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const preprocessRef = useRef<HTMLCanvasElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const camRef = useRef<CameraHandle | null>(null);
 
@@ -166,16 +167,20 @@ export default function ScannerPage() {
   };
 
   const tickFrame = async () => {
-    if (!videoRef.current || !canvasRef.current || !matcher) return;
-    const c = captureFrame(videoRef.current, canvasRef.current);
-    if (!c) {
+    if (!videoRef.current || !canvasRef.current || !preprocessRef.current || !matcher) return;
+    const raw = captureFrame(videoRef.current, canvasRef.current);
+    if (!raw) {
       if (debug) {
         setDebugStats((s) => ({ ...s, captureFails: s.captureFails + 1 }));
       }
       return;
     }
+    // Crop to the reticle and apply grayscale + contrast — Tesseract
+    // accuracy on tag photos goes way up with clean monochrome input.
+    const processed = cropAndPreprocess(raw, preprocessRef.current);
+    if (!processed) return;
     const t0 = performance.now();
-    const text = await recognizeCanvas(c);
+    const text = await recognizeCanvas(processed);
     const elapsed = Math.round(performance.now() - t0);
     if (debug) {
       setLastOcr(text);
@@ -543,6 +548,7 @@ export default function ScannerPage() {
           </div>
         </div>
         <canvas ref={canvasRef} className="hidden" />
+        <canvas ref={preprocessRef} className="hidden" />
         {mode === 'live' ? (
           <div className="flex-1 relative bg-black">
             <video

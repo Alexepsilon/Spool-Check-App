@@ -53,6 +53,51 @@ export function captureFrame(
   return canvas;
 }
 
+/**
+ * Crop the central reticle region of [src] into [dest] and apply
+ * grayscale + contrast boost. OCR accuracy on industrial tags improves
+ * dramatically with this preprocessing — Tesseract was trained on
+ * clean black-on-white documents, not color photos with background
+ * noise.
+ *
+ * Crop window roughly matches the on-screen reticle proportions
+ * (centered, ~75% wide × 45% tall of the camera frame).
+ */
+export function cropAndPreprocess(
+  src: HTMLCanvasElement,
+  dest: HTMLCanvasElement,
+): HTMLCanvasElement | null {
+  if (src.width === 0 || src.height === 0) return null;
+  const cropW = Math.floor(src.width * 0.75);
+  const cropH = Math.floor(src.height * 0.45);
+  const cropX = Math.floor((src.width - cropW) / 2);
+  const cropY = Math.floor((src.height - cropH) / 2);
+
+  dest.width = cropW;
+  dest.height = cropH;
+  const ctx = dest.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.drawImage(src, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+  // Pixel-level pass: grayscale + contrast stretch.
+  // Tesseract performs substantially better on high-contrast monochrome.
+  const img = ctx.getImageData(0, 0, cropW, cropH);
+  const d = img.data;
+  const contrast = 1.6;
+  for (let i = 0; i < d.length; i += 4) {
+    // Luminosity grayscale.
+    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    // Contrast around 128 midpoint.
+    let v = (gray - 128) * contrast + 128;
+    if (v < 0) v = 0;
+    else if (v > 255) v = 255;
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  ctx.putImageData(img, 0, 0);
+  return dest;
+}
+
 /** Try to enable the device torch (flashlight) on the given stream.
  *  Best-effort: many phones / browsers don't expose this. */
 export async function setTorch(

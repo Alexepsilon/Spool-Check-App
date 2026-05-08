@@ -15,7 +15,7 @@ import {
 import { pulseDouble, pulseLong, pulseShort } from '../lib/haptics';
 import { useLang } from '../lib/i18n';
 import { CodeMatcher, type MatchResult } from '../lib/matcher';
-import { recognizeCanvas, recognizeImage } from '../lib/ocr';
+import { getWorkerStatus, recognizeCanvas, recognizeImage } from '../lib/ocr';
 import {
   DEFAULT_CODE_PATTERN,
   FRAME_CONSENSUS_COUNT,
@@ -64,6 +64,12 @@ export default function ScannerPage() {
   const [pending, setPending] = useState<PendingFlow | null>(null);
   const [debug, setDebug] = useState(false);
   const [lastOcr, setLastOcr] = useState('');
+  const [debugStats, setDebugStats] = useState({
+    frames: 0,
+    captureFails: 0,
+    emptyResults: 0,
+    lastFrameMs: 0,
+  });
 
   // Frame-consensus state lives in refs so the OCR loop can mutate without rerenders.
   const consensusBuf = useRef<Set<string>[]>([]);
@@ -162,9 +168,24 @@ export default function ScannerPage() {
   const tickFrame = async () => {
     if (!videoRef.current || !canvasRef.current || !matcher) return;
     const c = captureFrame(videoRef.current, canvasRef.current);
-    if (!c) return;
+    if (!c) {
+      if (debug) {
+        setDebugStats((s) => ({ ...s, captureFails: s.captureFails + 1 }));
+      }
+      return;
+    }
+    const t0 = performance.now();
     const text = await recognizeCanvas(c);
-    if (debug) setLastOcr(text);
+    const elapsed = Math.round(performance.now() - t0);
+    if (debug) {
+      setLastOcr(text);
+      setDebugStats((s) => ({
+        frames: s.frames + 1,
+        captureFails: s.captureFails,
+        emptyResults: text.trim() === '' ? s.emptyResults + 1 : s.emptyResults,
+        lastFrameMs: elapsed,
+      }));
+    }
     const matches = matcher.match(text);
     const keys = new Set<string>();
     for (const m of matches) {
@@ -534,7 +555,7 @@ export default function ScannerPage() {
               <Reticle holding={holding} />
             </div>
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent pt-12 px-4 pb-4">
-              {debug && <DebugOcr text={lastOcr} />}
+              {debug && <DebugOcr text={lastOcr} stats={debugStats} />}
               <p className="text-center text-sm text-white/80 mb-3">{t('scan_aim')}</p>
               <Feed feed={feed} />
             </div>
@@ -578,7 +599,7 @@ export default function ScannerPage() {
                 <div className="mt-2 text-sm">{busy}</div>
               </div>
             )}
-            {debug && <DebugOcr text={lastOcr} />}
+            {debug && <DebugOcr text={lastOcr} stats={debugStats} />}
             <div className="mt-8 max-h-48 overflow-auto w-full max-w-sm">
               <Feed feed={feed} />
             </div>
@@ -705,18 +726,41 @@ function Feed({ feed }: { feed: { time: number; key: string; status: string }[] 
 
 /**
  * Live OCR debug panel. Toggleable from the Scanner top bar.
- * Shows what Tesseract just produced so the user can diagnose
- * why a tag isn't matching — empty = OCR can't read anything,
- * full of garbage = noise/glare/moiré, recognisable but off-format
- * = pattern needs another tweak.
+ * Shows worker status, frame stats, and the last OCR text so we can
+ * pinpoint exactly where the pipeline is failing:
+ *   - worker `error` → Tesseract failed to load (network or SW issue)
+ *   - frames = 0 → tickFrame isn't running (camera not started?)
+ *   - captureFails high → video element not delivering frames
+ *   - emptyResults == frames → OCR runs but always returns nothing
+ *   - text shown but no match → matcher / regex tuning issue
  */
-function DebugOcr({ text }: { text: string }) {
+function DebugOcr({
+  text,
+  stats,
+}: {
+  text: string;
+  stats: { frames: number; captureFails: number; emptyResults: number; lastFrameMs: number };
+}) {
+  const workerStatus = getWorkerStatus();
   return (
-    <div className="bg-yellow-500/95 text-black rounded-lg px-3 py-2 mb-3 text-xs font-mono max-h-32 overflow-auto whitespace-pre-wrap break-all">
+    <div className="bg-yellow-500/95 text-black rounded-lg px-3 py-2 mb-3 text-xs font-mono max-h-44 overflow-auto whitespace-pre-wrap break-all">
       <div className="font-semibold uppercase tracking-wide text-[10px] mb-1">
-        OCR debug — last frame
+        OCR debug
       </div>
-      {text.trim() || '(empty — OCR found nothing)'}
+      <div className="text-[10px] mb-2 grid grid-cols-2 gap-x-3 gap-y-0.5">
+        <span>worker: <strong>{workerStatus.status}</strong></span>
+        <span>frames: <strong>{stats.frames}</strong></span>
+        <span>capture fails: <strong>{stats.captureFails}</strong></span>
+        <span>empty results: <strong>{stats.emptyResults}</strong></span>
+        <span>last frame: <strong>{stats.lastFrameMs}ms</strong></span>
+        {workerStatus.error && (
+          <span className="col-span-2 text-red-700">err: {workerStatus.error}</span>
+        )}
+      </div>
+      <div className="border-t border-black/20 pt-1">
+        <span className="text-[10px] opacity-70">last text:</span>
+        <div>{text.trim() || '(empty)'}</div>
+      </div>
     </div>
   );
 }

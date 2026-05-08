@@ -6,30 +6,41 @@
 // Service Worker (configured in vite.config.ts) caches those so OCR
 // works offline after one online run.
 
-import Tesseract, { PSM } from 'tesseract.js';
+import Tesseract from 'tesseract.js';
 
 let workerPromise: Promise<Tesseract.Worker> | null = null;
+let workerStatus: 'init' | 'ready' | 'error' = 'init';
+let workerError: string | null = null;
+
+export function getWorkerStatus(): { status: typeof workerStatus; error: string | null } {
+  return { status: workerStatus, error: workerError };
+}
 
 async function getWorker(): Promise<Tesseract.Worker> {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const worker = await Tesseract.createWorker(['eng', 'nld'], 1, {
-        logger: () => {
-          // Silenced — we don't surface progress per call.
-        },
-      });
-      // Limit charset to make OCR faster and more accurate on tag-like
-      // text. PSM 6 = single uniform block of text. This is the right
-      // mode for spool tags: they're a small region of text on a
-      // contrasting background, NOT a full document page. PSM 1 (auto +
-      // OSD) expects a page and silently returns empty results on
-      // single-tag images — we burned a session on that.
-      await worker.setParameters({
-        tessedit_char_whitelist:
-          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-./: |&',
-        tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
-      });
-      return worker;
+      try {
+        const worker = await Tesseract.createWorker(['eng', 'nld'], 1, {
+          logger: () => {
+            // Silenced — we don't surface progress per call.
+          },
+        });
+        // Default page segmentation (auto, no OSD). The previous custom
+        // PSM choices (1 = page+OSD, 6 = single block) both turned out
+        // to misbehave on small tag images — silent empties with PSM 1,
+        // overzealous merging with PSM 6. Default PSM 3 has been the
+        // most reliable in real testing.
+        await worker.setParameters({
+          tessedit_char_whitelist:
+            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-./: |&',
+        });
+        workerStatus = 'ready';
+        return worker;
+      } catch (e) {
+        workerStatus = 'error';
+        workerError = (e as Error).message;
+        throw e;
+      }
     })();
   }
   return workerPromise;

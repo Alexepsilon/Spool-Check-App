@@ -13,7 +13,7 @@ export default function Layout({ title, showBack, right, children }: Props) {
   const navigate = useNavigate();
   return (
     <div className="flex flex-col min-h-screen">
-      <header className="bg-primary text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-10 shadow">
+      <header className="bg-primary text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-30 shadow">
         {showBack && (
           <button
             onClick={() => navigate(-1)}

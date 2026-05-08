@@ -94,7 +94,7 @@ export default function StatusBoardPage() {
           theme="dark"
         />
       </div>
-      <div className="bg-white px-3 py-2 border-b sticky top-[57px] z-10 flex flex-col gap-2">
+      <div className="bg-white px-3 py-2 border-b sticky top-14 z-20 flex flex-col gap-2">
         <input
           type="search"
           placeholder={t('board_search')}

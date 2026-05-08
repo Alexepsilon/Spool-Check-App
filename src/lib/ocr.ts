@@ -51,11 +51,32 @@ async function getWorker(): Promise<Tesseract.Worker> {
       } catch (e) {
         workerStatus = 'error';
         workerError = (e as Error).message;
+        // Reset so a future call can retry instead of returning the same
+        // failed promise forever.
+        workerPromise = null;
         throw e;
       }
     })();
   }
   return workerPromise;
+}
+
+/** Discard the current worker (and any stuck init) so the next call
+ *  starts a fresh download. Used by the "Reload OCR" debug button. */
+export async function resetWorker(): Promise<void> {
+  const wp = workerPromise;
+  workerPromise = null;
+  workerStatus = 'init';
+  workerError = null;
+  workerProgress = 0;
+  if (wp) {
+    try {
+      const w = await wp;
+      await w.terminate();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 let workerProgress = 0;

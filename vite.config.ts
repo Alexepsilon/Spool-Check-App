@@ -54,23 +54,26 @@ export default defineConfig(({ mode }) => ({
         // runtime; cache those responses on first hit so OCR works offline
         // after the first online OCR.
         runtimeCaching: [
+          // Tesseract WASM + traineddata.
+          //
+          // NetworkFirst (not CacheFirst): try the network, fall back
+          // to cache only when offline. Avoids the trap where a broken
+          // or partial first download is cached forever.
           {
-            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*tesseract.*$/,
-            handler: 'CacheFirst',
+            urlPattern: /tesseract|tessdata|traineddata/i,
+            handler: 'NetworkFirst',
             options: {
-              cacheName: 'tesseract-cdn',
-              expiration: { maxEntries: 50, maxAgeSeconds: 365 * 24 * 60 * 60 },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/(unpkg|cdn)\..*\/.*tesseract.*$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'tesseract-cdn',
+              cacheName: 'tesseract-cdn-v2',
+              networkTimeoutSeconds: 10,
               expiration: { maxEntries: 50, maxAgeSeconds: 365 * 24 * 60 * 60 },
             },
           },
         ],
+        // Force a clean activation so old service workers don't keep
+        // serving stale Tesseract bundles after a deploy.
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
       },
       devOptions: {
         enabled: false, // PWA features only in production build

@@ -21,6 +21,7 @@ import {
   preloadWorker,
   recognizeCanvas,
   recognizeImage,
+  resetWorker,
 } from '../lib/ocr';
 import {
   DEFAULT_CODE_PATTERN,
@@ -551,7 +552,14 @@ export default function ScannerPage() {
             theme="dark"
           />
           {workerInfo.status !== 'ready' && (
-            <OcrLoadingBar status={workerInfo.status} progress={workerInfo.progress} />
+            <OcrLoadingBar
+              status={workerInfo.status}
+              progress={workerInfo.progress}
+              onRetry={async () => {
+                await resetWorker();
+                preloadWorker();
+              }}
+            />
           )}
           <div className="flex border-t border-white/10">
             <ModeBtn label="📷 Live" active={mode === 'live'} onClick={() => switchMode('live')} />
@@ -681,14 +689,16 @@ function HighlightBanner({ item }: { item: MasterItem }) {
 function OcrLoadingBar({
   status,
   progress,
+  onRetry,
 }: {
   status: 'init' | 'ready' | 'error';
   progress: number;
+  onRetry: () => void;
 }) {
   const pct = Math.round(progress * 100);
   const label =
     status === 'error'
-      ? 'OCR engine failed to load — check connection'
+      ? 'OCR engine failed to load'
       : pct < 100
       ? `Loading OCR engine… ${pct}%`
       : 'Initialising OCR…';
@@ -700,6 +710,12 @@ function OcrLoadingBar({
           <div className="h-full bg-black/60 transition-all" style={{ width: `${pct}%` }} />
         </div>
       )}
+      <button
+        onClick={onRetry}
+        className="px-2 py-0.5 bg-black/15 rounded text-[11px] font-semibold active:scale-95"
+      >
+        Retry
+      </button>
     </div>
   );
 }
@@ -949,12 +965,23 @@ function PendingDialog({
             <div className="text-xs uppercase tracking-wide text-accent font-semibold">
               {t('scan_match_found')}
             </div>
-            <div className="font-mono text-lg font-semibold mt-1">
+            <div className="font-mono text-base font-semibold mt-1 break-all">
               {pending.result.drawing}
             </div>
+            {/* Big, unmissable spool letter so a misread (e.g. B vs 8)
+                 can't slip past the user. Single-char OCR is the most
+                 error-prone part of the pipeline. */}
             {pending.result.spool && (
-              <div className="text-sm text-gray-600 mt-0.5">
-                spool <span className="font-mono font-semibold">{pending.result.spool}</span>
+              <div className="mt-3 flex items-center gap-3 bg-yellow-50 border border-yellow-300 rounded-lg p-3">
+                <div className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold">
+                  Spool
+                </div>
+                <div className="text-3xl font-mono font-bold text-gray-900 leading-none">
+                  {pending.result.spool}
+                </div>
+                <div className="ml-auto text-[11px] text-gray-600">
+                  Verify before tapping Confirm
+                </div>
               </div>
             )}
             {pending.matchedItem && <RowContext item={pending.matchedItem} />}

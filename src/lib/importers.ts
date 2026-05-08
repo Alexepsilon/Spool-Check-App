@@ -31,16 +31,26 @@ export interface ImportResult {
   columnMap?: Record<keyof ImportedItem, number>;
 }
 
+// Bilingual aliases for secondary fields. Headers are matched case-insensitively
+// with substring matching, so a Dutch sheet uses the same code path as English.
 const standardFieldHeaders: Record<keyof ImportedItem, string[]> = {
   drawing: DRAWING_HEADERS,
   spool: SPOOL_HEADERS,
-  isoNumber: ['iso number', 'iso no'],
-  project: ['project', 'area'],
-  diameter: ['diameter', 'dia', 'size'],
-  paintSpec: ['paint spec', 'paint spec.', 'paint specification', 'verfsysteem'],
-  ral: ['ral', 'ral colour', 'ral color'],
-  chClean: ['ch.clean.', 'ch clean', 'cleanliness'],
-  remark: ['remark', 'note', 'opmerking'],
+  isoNumber: ['iso number', 'iso no', 'iso nummer', 'iso nr'],
+  project: ['project', 'area', 'gebied', 'job', 'project nr'],
+  diameter: ['diameter', 'dia', 'size', 'maat', 'dn'],
+  paintSpec: [
+    'paint spec',
+    'paint spec.',
+    'paint specification',
+    'paint',
+    'verfsysteem', // Dutch
+    'verfspec',
+    'verfspecificatie',
+  ],
+  ral: ['ral', 'ral colour', 'ral color', 'kleur'],
+  chClean: ['ch.clean.', 'ch clean', 'cleanliness', 'reiniging', 'schoonheid'],
+  remark: ['remark', 'note', 'remarks', 'opmerking', 'opmerkingen', 'notities'],
 };
 
 function normaliseHeader(s: string): string {

@@ -17,6 +17,7 @@ import { useLang } from '../lib/i18n';
 import { CodeMatcher, type MatchResult } from '../lib/matcher';
 import { recognizeCanvas, recognizeImage } from '../lib/ocr';
 import {
+  DEFAULT_CODE_PATTERN,
   FRAME_CONSENSUS_COUNT,
   FRAME_CONSENSUS_WINDOW,
   OCR_FRAME_INTERVAL_MS,
@@ -32,6 +33,9 @@ interface PendingFlow {
   result?: MatchResult;
   drawing?: string;
   spool?: string;
+  /** Raw OCR text — kept so the user can see what the camera read and
+   *  copy from it manually if extraction failed. */
+  rawText?: string;
   /** Full master row — populated when the matcher resolved an item, so the
    *  dialog can show diameter / paint / RAL / scope and the user can
    *  verify the whole row before confirming. */
@@ -61,6 +65,8 @@ export default function ScannerPage() {
 
   // Frame-consensus state lives in refs so the OCR loop can mutate without rerenders.
   const consensusBuf = useRef<Set<string>[]>([]);
+  const offListBuf = useRef<string[]>([]); // codes seen by OCR that AREN'T on the master list
+  const offListText = useRef<Map<string, string>>(new Map()); // raw OCR text per off-list code
   const candidateInfo = useRef<Map<string, MatchResult>>(new Map());
   const recentMatches = useRef<Map<string, number>>(new Map());
   const processing = useRef(false);
@@ -176,6 +182,53 @@ export default function ScannerPage() {
     for (const k of committable) {
       const m = candidateInfo.current.get(k);
       if (m) await commit(m);
+    }
+
+    // ---- Off-list detection ----
+    // If OCR found code-shaped strings that AREN'T in the master set, and the
+    // SAME off-list code shows up in N consecutive frames, fire the
+    // "Not on the list" dialog so the user can record it without leaving
+    // the scanner.
+    if (committable.size === 0 && !pending) {
+      const re = new RegExp(DEFAULT_CODE_PATTERN.source, 'g');
+      const matchedKeys = new Set(matches.map((m) => composeKey(m.drawing, m.spool)));
+      const offListThisFrame: string[] = [];
+      let mm: RegExpExecArray | null;
+      while ((mm = re.exec(text.toUpperCase())) !== null) {
+        const candidate = mm[0];
+        // Already matched (any spool variant) — skip.
+        let isMatched = false;
+        for (const k of matchedKeys) {
+          if (k === candidate || k.startsWith(`${candidate}|`)) {
+            isMatched = true;
+            break;
+          }
+        }
+        if (!isMatched) {
+          offListThisFrame.push(candidate);
+          offListText.current.set(candidate, text);
+        }
+      }
+      offListBuf.current.push(offListThisFrame.length ? offListThisFrame[0] : '');
+      while (offListBuf.current.length > FRAME_CONSENSUS_WINDOW) {
+        offListBuf.current.shift();
+      }
+      // Need N consecutive frames with the SAME off-list code.
+      if (offListBuf.current.length >= FRAME_CONSENSUS_COUNT) {
+        const recent = offListBuf.current.slice(-FRAME_CONSENSUS_COUNT);
+        const first = recent[0];
+        if (first && recent.every((c) => c === first)) {
+          // Avoid spamming: only fire if not recently shown.
+          const last = recentMatches.current.get(`offlist:${first}`) ?? 0;
+          if (Date.now() - last >= SCAN_DEBOUNCE_MS) {
+            recentMatches.current.set(`offlist:${first}`, Date.now());
+            const rawText = offListText.current.get(first) ?? '';
+            // Try to extract the spool letter from the same OCR pass.
+            const spool = CodeMatcher.firstLoneLetter(rawText.toUpperCase()) ?? '';
+            setPending({ type: 'notFound', drawing: first, spool, rawText });
+          }
+        }
+      }
     }
   };
 
@@ -312,19 +365,35 @@ export default function ScannerPage() {
     ].slice(0, 20));
   };
 
-  const onAddUncharted = async () => {
+  /**
+   * Save an unmatched scan to Uncharted. Accepts user-edited values from
+   * the dialog so a label OCR couldn't read can still be recorded by typing
+   * it in. Never bails on empty drawing — at minimum we save the raw OCR
+   * text so the user has a record they can resolve later.
+   */
+  const onAddUncharted = async (
+    overrideDrawing?: string,
+    overrideSpool?: string,
+  ) => {
+    if (!deliveryId) {
+      setPending(null);
+      return;
+    }
     const m = pending?.result;
-    const drawing = pending?.drawing ?? m?.drawing;
-    const spool = pending?.spool ?? m?.spool ?? '';
+    const drawing = (overrideDrawing ?? pending?.drawing ?? m?.drawing ?? '').trim();
+    const spool = (overrideSpool ?? pending?.spool ?? m?.spool ?? '')
+      .trim()
+      .toUpperCase();
+    const rawText = pending?.rawText;
     setPending(null);
-    if (!drawing || !deliveryId) return;
     pulseLong();
     const scan: Scan = {
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       deliveryId,
-      drawing,
+      drawing: drawing || '(unreadable)',
       spool,
+      rawText,
       confidence: 'none',
       confirmed: false,
     };
@@ -334,12 +403,17 @@ export default function ScannerPage() {
       scanId: scan.id,
       deliveryId,
       timestamp: Date.now(),
-      drawing,
+      drawing: drawing || '(unreadable)',
       spool,
       disposition: 'unassigned',
+      notes: !drawing && rawText ? `OCR text: ${rawText.slice(0, 200)}` : undefined,
     });
     setFeed((f) => [
-      { time: Date.now(), key: composeKey(drawing, spool), status: 'uncharted' },
+      {
+        time: Date.now(),
+        key: composeKey(drawing || '(unreadable)', spool),
+        status: 'uncharted',
+      },
       ...f,
     ].slice(0, 20));
   };
@@ -367,15 +441,19 @@ export default function ScannerPage() {
       } else if (partial) {
         setPending({ type: 'partial', result: partial });
       } else {
-        // Try to extract something from the text for the not-found dialog
-        const re = new RegExp(matcher['pattern'].source, 'g');
-        const m = re.exec(text);
+        // No master-list match — open the not-found dialog. Pre-fill drawing
+        // with the first regex hit (if any) and spool with the first lone
+        // letter, but always pass the raw OCR text so the user can edit
+        // values manually if the camera misread them.
+        const re = new RegExp(DEFAULT_CODE_PATTERN.source, 'g');
+        const m = re.exec(text.toUpperCase());
         const drawing = m?.[0] ?? '';
         const spool = drawing ? CodeMatcher.firstLoneLetter(text.toUpperCase()) ?? '' : '';
         setPending({
           type: 'notFound',
           drawing,
           spool,
+          rawText: text,
         });
       }
     } catch (e) {
@@ -501,7 +579,7 @@ export default function ScannerPage() {
           onConfirm={onMatchConfirm}
           onReject={onMatchReject}
           onPickSpool={onPartialPick}
-          onAddUncharted={onAddUncharted}
+          onAddUncharted={(d, s) => onAddUncharted(d, s)}
         />
       )}
       {highlight && <HighlightBanner item={highlight} />}
@@ -609,6 +687,83 @@ function Feed({ feed }: { feed: { time: number; key: string; status: string }[] 
   );
 }
 
+function NotFoundForm({
+  initialDrawing,
+  initialSpool,
+  rawText,
+  onCancel,
+  onAdd,
+}: {
+  initialDrawing: string;
+  initialSpool: string;
+  rawText?: string;
+  onCancel: () => void;
+  onAdd: (drawing: string, spool: string) => void;
+}) {
+  const { t } = useLang();
+  const [drawing, setDrawing] = useState(initialDrawing);
+  const [spool, setSpool] = useState(initialSpool);
+  const [showRaw, setShowRaw] = useState(false);
+  return (
+    <>
+      <div className="text-xs uppercase tracking-wide text-red-600 font-semibold">
+        {t('scan_not_found')}
+      </div>
+      <p className="text-xs text-gray-600 mt-1 mb-3">
+        OCR couldn't find this on the active list. Edit the values if the
+        camera misread them, then add to Uncharted.
+      </p>
+      <label className="block text-xs text-gray-500 mb-1">Drawing no. (Tek nr)</label>
+      <input
+        value={drawing}
+        onChange={(e) => setDrawing(e.target.value)}
+        placeholder="e.g. 322-FLA-1001-SS-100-P-2"
+        className="w-full border rounded px-2 py-2 font-mono text-sm bg-white"
+        autoCapitalize="characters"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      <label className="block text-xs text-gray-500 mt-3 mb-1">Spool</label>
+      <input
+        value={spool}
+        onChange={(e) => setSpool(e.target.value.toUpperCase())}
+        maxLength={2}
+        placeholder="A"
+        className="w-20 border rounded px-2 py-2 font-mono text-sm bg-white"
+        autoCapitalize="characters"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      {rawText && (
+        <div className="mt-3">
+          <button
+            onClick={() => setShowRaw((v) => !v)}
+            className="text-xs text-gray-500 underline"
+          >
+            {showRaw ? 'Hide' : 'Show'} raw OCR text
+          </button>
+          {showRaw && (
+            <pre className="text-[11px] text-gray-700 bg-gray-100 rounded p-2 mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all">
+              {rawText.trim()}
+            </pre>
+          )}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2 mt-5">
+        <button onClick={onCancel} className="border rounded py-3 font-medium">
+          {t('scan_try_again')}
+        </button>
+        <button
+          onClick={() => onAdd(drawing, spool)}
+          className="bg-status-pending text-white rounded py-3 font-medium"
+        >
+          {t('scan_add_uncharted')}
+        </button>
+      </div>
+    </>
+  );
+}
+
 function RowContext({ item }: { item: MasterItem }) {
   const fields: { label: string; value?: string }[] = [
     { label: 'Diameter', value: item.diameter },
@@ -647,7 +802,7 @@ function PendingDialog({
   onConfirm: () => void;
   onReject: () => void;
   onPickSpool: (s: string) => void;
-  onAddUncharted: () => void;
+  onAddUncharted: (drawing: string, spool: string) => void;
 }) {
   const { t } = useLang();
   return (
@@ -720,19 +875,13 @@ function PendingDialog({
           </>
         )}
         {pending.type === 'notFound' && (
-          <>
-            <div className="text-xs uppercase tracking-wide text-red-600 font-semibold">
-              {t('scan_not_found')}
-            </div>
-            <div className="font-mono text-lg font-semibold mt-1">
-              {pending.drawing || '—'}
-            </div>
-            {pending.spool && <div className="text-sm text-gray-600">spool {pending.spool}</div>}
-            <div className="grid grid-cols-2 gap-2 mt-5">
-              <button onClick={onCancel} className="border rounded py-3 font-medium">{t('scan_try_again')}</button>
-              <button onClick={onAddUncharted} className="bg-status-pending text-white rounded py-3 font-medium">{t('scan_add_uncharted')}</button>
-            </div>
-          </>
+          <NotFoundForm
+            initialDrawing={pending.drawing ?? ''}
+            initialSpool={pending.spool ?? ''}
+            rawText={pending.rawText}
+            onCancel={onCancel}
+            onAdd={onAddUncharted}
+          />
         )}
       </div>
     </div>

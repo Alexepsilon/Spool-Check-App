@@ -84,6 +84,48 @@ export interface ClientMapping {
   updatedAt: number;
 }
 
+/**
+ * A box drawn on a tag photo, naming the field that lives in that
+ * region. Coordinates are normalised (0..1) so the box stays correct
+ * across photos of any resolution.
+ */
+export type TemplateFieldKind =
+  | 'drawing'
+  | 'spool'
+  | 'paint'
+  | 'ral'
+  | 'scope'
+  | 'custom';
+
+export interface TemplateField {
+  id: string;
+  kind: TemplateFieldKind;
+  /** Display name shown in the editor (kind label or user-supplied). */
+  label: string;
+  /** Normalised box on the reference image: x, y, w, h all 0..1. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Per-fabricator tag layout. Future scans can reuse the saved field
+ * regions to constrain OCR — much more reliable than full-image OCR.
+ */
+export interface Template {
+  id: string;
+  name: string; // e.g. "XYCLE Bellnet Niedam yellow"
+  fabricator?: string;
+  notes?: string;
+  /** Reference image as a data URL (jpeg). Stored alongside so the
+   *  editor can render it later for tweaks. */
+  referenceImage: string;
+  fields: TemplateField[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface AppSettings {
   language: 'en' | 'nl';
   confirmBeforeVerified: boolean;

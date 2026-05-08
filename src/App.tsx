@@ -6,6 +6,8 @@ import StatusBoardPage from './pages/StatusBoard';
 import ScannerPage from './pages/Scanner';
 import UnchartedPage from './pages/Uncharted';
 import SettingsPage from './pages/Settings';
+import TemplatesPage from './pages/Templates';
+import TemplateEditorPage from './pages/TemplateEditor';
 
 // HashRouter is used so the same URL works locally, on GitHub Pages
 // (where /Spool-Check-App/path/to/foo would otherwise 404 on a refresh),
@@ -21,6 +23,8 @@ export default function App() {
         <Route path="/scan/:deliveryId" element={<ScannerPage />} />
         <Route path="/uncharted/:deliveryId" element={<UnchartedPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/templates" element={<TemplatesPage />} />
+        <Route path="/templates/:templateId" element={<TemplateEditorPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>

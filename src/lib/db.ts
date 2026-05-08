@@ -17,6 +17,7 @@ import type {
   Delivery,
   MasterItem,
   Scan,
+  Template,
   UnchartedItem,
 } from './types';
 import { defaultSettings } from './types';
@@ -50,6 +51,11 @@ interface SpoolCheckDB extends DBSchema {
     key: string; // clientName
     value: ClientMapping;
   };
+  templates: {
+    key: string;
+    value: Template;
+    indexes: { 'by-updatedAt': number };
+  };
   settings: {
     key: string;
     value: { key: string; value: unknown };
@@ -57,35 +63,41 @@ interface SpoolCheckDB extends DBSchema {
 }
 
 const DB_NAME = 'spool-check';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<SpoolCheckDB>> | null = null;
 
 function getDB(): Promise<IDBPDatabase<SpoolCheckDB>> {
   if (!dbPromise) {
     dbPromise = openDB<SpoolCheckDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const deliveries = db.createObjectStore('deliveries', { keyPath: 'id' });
-        deliveries.createIndex('by-importedAt', 'importedAt');
-        deliveries.createIndex('by-status', 'status');
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const deliveries = db.createObjectStore('deliveries', { keyPath: 'id' });
+          deliveries.createIndex('by-importedAt', 'importedAt');
+          deliveries.createIndex('by-status', 'status');
 
-        const items = db.createObjectStore('master_items', { keyPath: 'id' });
-        items.createIndex('by-delivery', 'deliveryId');
-        items.createIndex('by-key', ['deliveryId', 'drawing', 'spool'], {
-          unique: true,
-        });
-        items.createIndex('by-status', 'status');
+          const items = db.createObjectStore('master_items', { keyPath: 'id' });
+          items.createIndex('by-delivery', 'deliveryId');
+          items.createIndex('by-key', ['deliveryId', 'drawing', 'spool'], {
+            unique: true,
+          });
+          items.createIndex('by-status', 'status');
 
-        const scans = db.createObjectStore('scans', { keyPath: 'id' });
-        scans.createIndex('by-timestamp', 'timestamp');
-        scans.createIndex('by-delivery', 'deliveryId');
+          const scans = db.createObjectStore('scans', { keyPath: 'id' });
+          scans.createIndex('by-timestamp', 'timestamp');
+          scans.createIndex('by-delivery', 'deliveryId');
 
-        const uncharted = db.createObjectStore('uncharted', { keyPath: 'id' });
-        uncharted.createIndex('by-delivery', 'deliveryId');
-        uncharted.createIndex('by-disposition', 'disposition');
+          const uncharted = db.createObjectStore('uncharted', { keyPath: 'id' });
+          uncharted.createIndex('by-delivery', 'deliveryId');
+          uncharted.createIndex('by-disposition', 'disposition');
 
-        db.createObjectStore('client_mappings', { keyPath: 'clientName' });
-        db.createObjectStore('settings', { keyPath: 'key' });
+          db.createObjectStore('client_mappings', { keyPath: 'clientName' });
+          db.createObjectStore('settings', { keyPath: 'key' });
+        }
+        if (oldVersion < 2) {
+          const tmpl = db.createObjectStore('templates', { keyPath: 'id' });
+          tmpl.createIndex('by-updatedAt', 'updatedAt');
+        }
       },
     });
   }
@@ -297,6 +309,28 @@ export async function getClientMapping(
   clientName: string,
 ): Promise<ClientMapping | undefined> {
   return (await getDB()).get('client_mappings', clientName);
+}
+
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
+
+export async function listTemplates(): Promise<Template[]> {
+  const all = await (await getDB()).getAll('templates');
+  return all.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function getTemplate(id: string): Promise<Template | undefined> {
+  return (await getDB()).get('templates', id);
+}
+
+export async function saveTemplate(t: Template): Promise<void> {
+  t.updatedAt = Date.now();
+  await (await getDB()).put('templates', t);
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  await (await getDB()).delete('templates', id);
 }
 
 // ---------------------------------------------------------------------------

@@ -9,9 +9,12 @@ import {
   findItemByKey,
   getDelivery,
   listItems,
+  listTemplates,
   loadSettings,
   setItemStatus,
 } from '../lib/db';
+import { scanWithTemplate } from '../lib/templateScan';
+import type { Template } from '../lib/types';
 import { pulseDouble, pulseLong, pulseShort } from '../lib/haptics';
 import { useLang } from '../lib/i18n';
 import { CodeMatcher, type MatchResult } from '../lib/matcher';
@@ -72,6 +75,8 @@ export default function ScannerPage() {
   const [pending, setPending] = useState<PendingFlow | null>(null);
   const [debug, setDebug] = useState(false);
   const [lastOcr, setLastOcr] = useState('');
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [debugStats, setDebugStats] = useState({
     frames: 0,
     captureFails: 0,
@@ -118,11 +123,13 @@ export default function ScannerPage() {
 
   const boot = async () => {
     if (!deliveryId) return;
-    const [d, its, set] = await Promise.all([
+    const [d, its, set, tmpls] = await Promise.all([
       getDelivery(deliveryId),
       listItems(deliveryId),
       loadSettings(),
+      listTemplates(),
     ]);
+    setTemplates(tmpls);
     if (!d) {
       navigate('/');
       return;
@@ -477,7 +484,25 @@ export default function ScannerPage() {
     setBusy(t('import_running_ocr'));
     setError(null);
     try {
-      const text = await recognizeImage(file);
+      // If a template is selected, crop to each field box and OCR each
+      // independently — far more reliable than full-image OCR.
+      const template = templates.find((tt) => tt.id === selectedTemplateId);
+      let text: string;
+      if (template) {
+        const r = await scanWithTemplate(file, template);
+        // Build a synthetic text block the matcher's anchor + regex
+        // extraction can consume. Field-typed prefixes act as the
+        // anchor labels we already understand.
+        const lines: string[] = [];
+        if (r.fields.drawing) lines.push(`TEK NR: ${r.fields.drawing}`);
+        if (r.fields.spool) lines.push(`SPOOL: ${r.fields.spool}`);
+        if (r.fields.paint) lines.push(`VERFSYSTEEM: ${r.fields.paint}`);
+        if (r.fields.ral) lines.push(`RAL: ${r.fields.ral}`);
+        if (r.fields.scope) lines.push(`SCOPE NR: ${r.fields.scope}`);
+        text = lines.join('\n');
+      } else {
+        text = await recognizeImage(file);
+      }
       setLastOcr(text);
       const matches = matcher.match(text);
       // Prefer exact, then fuzzy, then partial.
@@ -614,6 +639,28 @@ export default function ScannerPage() {
                 e.target.value = '';
               }}
             />
+            {/* Template picker — only shown if any are saved. When set,
+                 photo OCR runs only inside the template's named field
+                 boxes, much more reliable than full-image OCR. */}
+            {templates.length > 0 && (
+              <div className="w-full max-w-sm mb-4">
+                <label className="block text-xs uppercase tracking-wide text-white/70 font-semibold mb-1">
+                  Tag template
+                </label>
+                <select
+                  value={selectedTemplateId}
+                  onChange={(e) => setSelectedTemplateId(e.target.value)}
+                  className="w-full bg-white/10 border border-white/30 rounded px-3 py-2 text-sm text-white"
+                >
+                  <option value="" className="text-black">No template — full image OCR</option>
+                  {templates.map((tt) => (
+                    <option key={tt.id} value={tt.id} className="text-black">
+                      {tt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               onClick={() => photoInputRef.current?.click()}
               className="bg-accent text-white px-6 py-4 rounded-lg text-lg font-medium active:scale-95"

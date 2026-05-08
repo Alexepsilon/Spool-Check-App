@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import {
   exportBackup,
@@ -90,6 +91,19 @@ export default function SettingsPage() {
             checked={settings.sound}
             onChange={(v) => update('sound', v)}
           />
+        </Section>
+
+        <Section title="Tag templates">
+          <p className="text-xs text-gray-500 mb-2">
+            Mark where each field lives on a fabricator's tag. Future scans
+            crop to those regions for much better OCR reliability.
+          </p>
+          <Link
+            to="/templates"
+            className="block w-full bg-primary text-white rounded py-3 font-medium text-center active:scale-95"
+          >
+            Manage templates
+          </Link>
         </Section>
 
         <Section title={t('settings_backup')}>

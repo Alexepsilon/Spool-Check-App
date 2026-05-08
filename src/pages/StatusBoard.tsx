@@ -130,33 +130,71 @@ export default function StatusBoardPage() {
           </Link>
         </div>
       </div>
-      <ul className="divide-y bg-white flex-1">
-        {visible.map((item) => (
-          <li key={item.id}>
-            <button
-              onClick={() => setActionItem(item)}
-              className="w-full flex items-center gap-3 px-4 py-3 active:bg-gray-100 text-left"
-            >
-              <StatusDot status={item.status} />
-              <div className="flex-1 min-w-0">
-                <div className="font-mono text-sm font-medium truncate">{item.drawing}</div>
-                <div className="text-xs text-gray-500 mt-0.5 flex gap-2">
-                  {item.spool && (
-                    <span className="bg-gray-100 px-1.5 rounded">spool {item.spool}</span>
-                  )}
-                  {item.diameter && <span>{item.diameter}</span>}
-                  {item.verifiedAt && (
-                    <span>{new Date(item.verifiedAt).toLocaleTimeString()}</span>
-                  )}
+      <div className="bg-white flex-1 overflow-x-auto">
+        {/* Column headers — scroll horizontally together with the rows. */}
+        <div className="min-w-max flex bg-gray-50 border-b text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+          <div className="sticky left-0 z-10 bg-gray-50 px-3 py-2 min-w-[230px] border-r">
+            Drawing no.
+          </div>
+          <Cell w="60px">Spool</Cell>
+          <Cell w="80px">Ø</Cell>
+          <Cell w="110px">Paint spec.</Cell>
+          <Cell w="80px">RAL</Cell>
+          <Cell w="90px">Ch.clean.</Cell>
+          <Cell w="90px">Project</Cell>
+          <Cell w="200px">Iso number</Cell>
+          <Cell w="200px">Remark</Cell>
+          <Cell w="130px">Verified at</Cell>
+        </div>
+        {visible.length === 0 ? (
+          <div className="text-center text-gray-500 py-12">No matches</div>
+        ) : (
+          <ul className="min-w-max divide-y">
+            {visible.map((item) => (
+              <li key={item.id}>
+                <div
+                  onClick={() => setActionItem(item)}
+                  className="flex items-center cursor-pointer active:bg-gray-100"
+                >
+                  <div className="sticky left-0 z-10 bg-white flex items-center gap-3 px-3 py-3 min-w-[230px] border-r">
+                    <StatusDot status={item.status} />
+                    <span className="font-mono text-sm font-medium truncate">
+                      {item.drawing}
+                    </span>
+                  </div>
+                  <Cell w="60px">
+                    {item.spool && (
+                      <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">
+                        {item.spool}
+                      </span>
+                    )}
+                  </Cell>
+                  <Cell w="80px">{item.diameter || '—'}</Cell>
+                  <Cell w="110px">
+                    {item.paintSpec && item.paintSpec !== 'N.A.' ? item.paintSpec : '—'}
+                  </Cell>
+                  <Cell w="80px">
+                    {item.ral && item.ral !== 'N.A.' ? item.ral : '—'}
+                  </Cell>
+                  <Cell w="90px">{item.chClean || '—'}</Cell>
+                  <Cell w="90px">{item.project || '—'}</Cell>
+                  <Cell w="200px" mono>
+                    {item.isoNumber && item.isoNumber !== item.drawing
+                      ? item.isoNumber
+                      : '—'}
+                  </Cell>
+                  <Cell w="200px">{item.remark || '—'}</Cell>
+                  <Cell w="130px">
+                    {item.verifiedAt
+                      ? new Date(item.verifiedAt).toLocaleString()
+                      : '—'}
+                  </Cell>
                 </div>
-              </div>
-            </button>
-          </li>
-        ))}
-        {visible.length === 0 && (
-          <li className="text-center text-gray-500 py-12">No matches</li>
+              </li>
+            ))}
+          </ul>
         )}
-      </ul>
+      </div>
       <div className="sticky bottom-0 p-3 bg-white border-t">
         <Link
           to={`/scan/${deliveryId}`}
@@ -173,6 +211,28 @@ export default function StatusBoardPage() {
         />
       )}
     </Layout>
+  );
+}
+
+function Cell({
+  w,
+  mono,
+  children,
+}: {
+  w: string;
+  mono?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={
+        'flex-shrink-0 px-3 py-3 text-sm text-gray-700 truncate ' +
+        (mono ? 'font-mono' : '')
+      }
+      style={{ minWidth: w, maxWidth: w }}
+    >
+      {children}
+    </div>
   );
 }
 

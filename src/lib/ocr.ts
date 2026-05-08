@@ -6,7 +6,7 @@
 // Service Worker (configured in vite.config.ts) caches those so OCR
 // works offline after one online run.
 
-import Tesseract from 'tesseract.js';
+import Tesseract, { PSM } from 'tesseract.js';
 
 let workerPromise: Promise<Tesseract.Worker> | null = null;
 
@@ -18,10 +18,14 @@ async function getWorker(): Promise<Tesseract.Worker> {
           // Silenced — we don't surface progress per call.
         },
       });
-      // Limit charset to make OCR faster and more accurate on tag-like text.
+      // Limit charset to make OCR faster and more accurate on tag-like
+      // text. PSM 1 = automatic page segmentation WITH orientation
+      // detection — handles tags that hang upside-down or sideways
+      // from a spool, which is common on site.
       await worker.setParameters({
         tessedit_char_whitelist:
           'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-./: |&',
+        tessedit_pageseg_mode: PSM.AUTO_OSD,
       });
       return worker;
     })();

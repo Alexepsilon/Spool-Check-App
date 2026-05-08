@@ -1,9 +1,21 @@
 // App-wide constants. Mirror lib/utils/constants.dart from the Flutter
 // prototype. Tweak after field testing.
 
-/** Default drawing-number regex: matches `322-FLA-1001-SS-100-P-2` and friends. */
+/**
+ * Default drawing-number regex.
+ *
+ * Real-world tag formats observed:
+ *   - 7-part: `322-FLA-1001-SS-100-P-2`, `322-GAS-0206-SS-80-N-1.2`
+ *   - 6-part: `321-OIL-0108-SS-15-T`     (XYCLE / MOH yellow tags)
+ *
+ * Generalised pattern: starts with 3 digits (area), followed by 3 to 6
+ * dash-separated alphanumeric chunks, each 1–6 chars, with optional
+ * `.N` decimal revision suffix. Permissive enough to catch both shapes
+ * and similar variants seen in the field, restrictive enough to ignore
+ * dates, single-segment numbers, and free text.
+ */
 export const DEFAULT_CODE_PATTERN =
-  /\b\d{3}-[A-Z0-9]{2,4}-\d{3,4}(?:\.\d+)?-[A-Z0-9]{2}-\d{1,3}-[A-Z]-\d+(?:\.\d+)?\b/g;
+  /\b\d{3}(?:-[A-Z0-9]{1,6}(?:\.\d+)?){3,6}\b/g;
 
 /** Anchors on the physical tag for `(drawing, spool)` field extraction. */
 export const DRAWING_ANCHORS = [
